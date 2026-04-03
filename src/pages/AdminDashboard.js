@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import api from '../utils/api';
+import axios from 'axios';
 import LogoutButton from '../components/common/LogoutButton';
 import JobManagement from '../components/admin/JobManagement';
 import AnalyticsCard from '../components/admin/AnalyticsCard';
 const AdminDashboard = () => {
+    const [metrics, setMetrics] = useState({});
+    const [users, setUsers] = useState([]);
+    const [jobs, setJobs] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
     const [activeUserTab, setActiveUserTab] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedUser, setSelectedUser] = useState(null);
@@ -12,50 +16,40 @@ const AdminDashboard = () => {
     const [userAnalytics, setUserAnalytics] = useState(null);
     const [jobDetails, setJobDetails] = useState(null);
     const [detailsLoading, setDetailsLoading] = useState(false);
-    const [localError, setLocalError] = useState(null);
 
-    // Use React Query for fetching admin dashboard data
-    const {
-        data: adminData,
-        isLoading: loading,
-        error: fetchError,
-        refetch: fetchAdminData
-    } = useQuery({
-        queryKey: ['adminDashboardData'],
-        queryFn: async () => {
+    const fetchAdminData = async () => {
+        try {
+            setLoading(true);
+            const token = localStorage.getItem('token');
+            const headers = { Authorization: `Bearer ${token}` };
+
             const [metricsRes, usersRes, jobsRes] = await Promise.all([
-                api.get('/api/admin/metrics'),
-                api.get('/api/admin/users'),
-                api.get('/api/admin/jobs'),
+                axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/admin/metrics`, { headers }),
+                axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/admin/users`, { headers }),
+                axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/admin/jobs`, { headers }),
             ]);
 
-            const usersArray = usersRes.data?.content || (Array.isArray(usersRes.data) ? usersRes.data : []);
-            const jobsArray = jobsRes.data?.content || (Array.isArray(jobsRes.data) ? jobsRes.data : []);
-
-            return {
-                metrics: metricsRes.data,
-                users: usersArray,
-                jobs: jobsArray
-            };
-        },
-        retry: 1
-    });
-
-    const metrics = adminData?.metrics || {};
-    const users = adminData?.users || [];
-    const jobs = adminData?.jobs || [];
-    const error = fetchError?.response?.data?.message || fetchError?.message || null;
-
-    useEffect(() => {
-        // Initial fetch handled by useQuery
-    }, []);
+            // Handle Spring Boot paginated response or direct list
+            setMetrics(metricsRes.data || {});
+            setUsers(Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data?.content || []));
+            setJobs(Array.isArray(jobsRes.data) ? jobsRes.data : (jobsRes.data?.content || []));
+            setError(null);
+        } catch (err) {
+            console.error('Error loading admin data:', err);
+            setError(err.response?.data?.message || 'Failed to load data. Check console for details.');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const fetchUserAnalytics = useCallback(async (userId) => {
         try {
             setDetailsLoading(true);
-            setLocalError(null);
+            setError(null);
+            const token = localStorage.getItem('token');
 
-            const response = await api.get(`/api/admin/users/${userId}/analytics`, {
+            const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/admin/users/${userId}/analytics`, {
+                headers: { Authorization: `Bearer ${token}` },
                 timeout: 10000
             });
 
@@ -100,7 +94,7 @@ const AdminDashboard = () => {
             setUserAnalytics(processedData);
         } catch (err) {
             console.error('Error fetching analytics:', err);
-            setLocalError(err.response?.data?.message || 'Failed to load analytics data');
+            setError(err.response?.data?.message || 'Failed to load analytics data');
             setUserAnalytics(null);
         } finally {
             setDetailsLoading(false);
@@ -114,9 +108,9 @@ const AdminDashboard = () => {
     //         setJobDetails(null);
 
     //         const token = localStorage.getItem('token');
-            // const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/admin/jobs/${jobId}/details`, {
-            //     headers: { Authorization: `Bearer ${token}` }
-            // });
+    // const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/admin/jobs/${jobId}/details`, {
+    //     headers: { Authorization: `Bearer ${token}` }
+    // });
 
     //         if (!response.data) {
     //             throw new Error('No data received');
@@ -135,14 +129,14 @@ const AdminDashboard = () => {
         setSelectedJob(null);
         setJobDetails(null);
         setSelectedUser(user);
-        fetchUserAnalytics(user.id || user._id);
+        fetchUserAnalytics(user._id);
     };
 
     // const handleViewJobDetails = (job) => {
     //     setSelectedUser(null);
     //     setUserAnalytics(null);
     //     setSelectedJob(job);
-    //     fetchJobDetails(job.id || job._id);
+    //     fetchJobDetails(job._id);
     // };
 
     const handleCloseModal = () => {
@@ -150,43 +144,56 @@ const AdminDashboard = () => {
         setSelectedJob(null);
         setUserAnalytics(null);
         setJobDetails(null);
-        setLocalError(null);
+        setError(null);
     };
 
     const handleDeleteUser = async (userId) => {
         if (!window.confirm('Are you sure you want to delete this user?')) return;
         try {
-            await api.delete(`/api/admin/users/${userId}`);
-            fetchAdminData();
+            const token = localStorage.getItem('token');
+            await axios.delete(`${process.env.REACT_APP_API_BASE_URL}/api/admin/users/${userId}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            setUsers((Array.isArray(users) ? users : []).filter(user => (user.id !== userId && user._id !== userId)));
             handleCloseModal();
-            alert('✅ User deleted successfully');
         } catch (err) {
-            console.error('Error deleting user:', err);
-            alert(err.response?.data?.message || 'Error deleting user');
+            console.error(err);
+            alert('Error deleting user');
         }
     };
 
     const handleChangeUserRole = async (userId, newRole) => {
         try {
-            await api.patch(`/api/admin/users/${userId}/role`, { role: newRole });
-            fetchAdminData(); // Refresh to ensure data sync
-            alert('✅ Role updated successfully!');
+            const token = localStorage.getItem('token');
+            await axios.patch(`${process.env.REACT_APP_API_BASE_URL}/api/admin/users/${userId}/role`,
+                { role: newRole },
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+
+            const updatedUsers = (Array.isArray(users) ? users : []).map(user =>
+                (user.id === userId || user._id === userId) ? { ...user, role: newRole } : user
+            );
+            setUsers(updatedUsers);
+
+            alert('Role updated successfully!');
         } catch (err) {
             console.error('Error updating role:', err);
-            alert(err.response?.data?.message || err.response?.data?.msg || 'Failed to update role.');
+            alert(err.response?.data?.msg || 'Failed to update role.');
         }
     };
 
     const handleDeleteJob = async (jobId) => {
         if (!window.confirm('Are you sure you want to delete this job?')) return;
         try {
-            await api.delete(`/api/admin/jobs/${jobId}`);
-            fetchAdminData();
+            const token = localStorage.getItem('token');
+            await axios.delete(`${process.env.REACT_APP_API_BASE_URL}/api/admin/jobs/${jobId}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            setJobs((Array.isArray(jobs) ? jobs : []).filter(job => (job.id !== jobId && job._id !== jobId)));
             handleCloseModal();
-            alert('✅ Job deleted successfully');
         } catch (err) {
-            console.error('Error deleting job:', err);
-            alert(err.response?.data?.message || 'Error deleting job');
+            console.error(err);
+            alert('Error deleting job');
         }
     };
 
@@ -195,11 +202,13 @@ const AdminDashboard = () => {
     }, []);
 
     // Filter users based on active tab and search query
-    const filteredUsers = users.filter(user => {
+    const filteredUsers = (Array.isArray(users) ? users : []).filter(user => {
         const matchesRole = activeUserTab === 'all' || user.role === activeUserTab;
+        const name = user.name || user.fullName || '';
+        const email = user.email || '';
         const matchesSearch = searchQuery === '' ||
-            (user.name && user.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-            (user.email && user.email.toLowerCase().includes(searchQuery.toLowerCase()));
+            name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            email.toLowerCase().includes(searchQuery.toLowerCase());
         return matchesRole && matchesSearch;
     });
 
@@ -233,7 +242,7 @@ const AdminDashboard = () => {
     }
 
     return (
-        
+
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 px-4 py-8">
             {/* Animated Background Elements */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
@@ -259,8 +268,8 @@ const AdminDashboard = () => {
                             <div className="flex justify-center items-center h-64">
                                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500"></div>
                             </div>
-                        ) : localError ? (
-                            <div className="text-center py-8 text-red-400">{localError}</div>
+                        ) : error ? (
+                            <div className="text-center py-8 text-red-400">{error}</div>
                         ) : selectedUser ? (
                             <>
                                 {/* User Header */}
@@ -279,7 +288,7 @@ const AdminDashboard = () => {
                                                     }`}>
                                                     {selectedUser.role?.toUpperCase() || 'UNKNOWN'}
                                                 </span>
-                                                <button 
+                                                <button
                                                     onClick={() => handleDeleteUser(selectedUser.id || selectedUser._id)}
                                                     className="text-xs bg-red-500/20 hover:bg-red-500/30 text-red-300 px-2 py-1 rounded-full transition-colors"
                                                 >
@@ -485,7 +494,7 @@ const AdminDashboard = () => {
                                         <div className="flex items-center space-x-4">
                                             <select
                                                 value={selectedUser.role}
-                                                onChange={(e) => handleChangeUserRole(selectedUser.id || selectedUser._id, e.target.value)}
+                                                onChange={(e) => handleChangeUserRole(selectedUser._id, e.target.value)}
                                                 className="bg-slate-800/50 border border-white/20 px-4 py-2 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition-all duration-200"
                                             >
                                                 <option value="student">Student</option>
@@ -523,7 +532,7 @@ const AdminDashboard = () => {
                                             </div>
                                         </div>
                                         <button
-                                            onClick={() => handleDeleteJob(selectedJob.id || selectedJob._id)}
+                                            onClick={() => handleDeleteJob(selectedJob._id)}
                                             className="text-xs bg-red-500/20 hover:bg-red-500/30 text-red-300 px-3 py-2 rounded-lg transition-colors"
                                         >
                                             Delete Job
@@ -744,7 +753,7 @@ const AdminDashboard = () => {
                         );
                     })}              
                 </div> */}
-                <AnalyticsCard/>
+                <AnalyticsCard />
 
                 {/* Users Management Section */}
                 <div className="bg-white/10 backdrop-blur-xl border border-white/20 p-8 rounded-3xl shadow-2xl">
@@ -825,7 +834,7 @@ const AdminDashboard = () => {
                             </thead>
                             <tbody className="divide-y divide-white/10">
                                 {filteredUsers.length > 0 ? (
-                                    filteredUsers.map((user) => (
+                                    (Array.isArray(filteredUsers) ? filteredUsers : []).map((user) => (
                                         <tr key={user.id || user._id} className="hover:bg-white/5 transition-colors duration-200 group">
                                             <td className="p-4">
                                                 <div className="flex items-center space-x-3">
@@ -891,7 +900,7 @@ const AdminDashboard = () => {
                 </div>
 
                 {/* Jobs Management Section */}
-                <JobManagement/>
+                <JobManagement />
                 {/* <div className="bg-white/10 backdrop-blur-xl border border-white/20 p-8 rounded-3xl shadow-2xl">
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center space-x-3">
