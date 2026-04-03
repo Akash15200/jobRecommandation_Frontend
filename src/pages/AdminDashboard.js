@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import LogoutButton from '../components/LogoutButton';
-import JobManagement from '../components/Admin/JobManagement';
-import AnalyticsCard from '../components/Admin/AnalyticsCard';
+import LogoutButton from '../components/common/LogoutButton';
+import JobManagement from '../components/admin/JobManagement';
+import AnalyticsCard from '../components/admin/AnalyticsCard';
 const AdminDashboard = () => {
     const [metrics, setMetrics] = useState({});
     const [users, setUsers] = useState([]);
@@ -29,9 +29,10 @@ const AdminDashboard = () => {
                 axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/admin/jobs`, { headers }),
             ]);
 
-            setMetrics(metricsRes.data);
-            setUsers(usersRes.data);
-            setJobs(jobsRes.data);
+            // Handle Spring Boot paginated response or direct list
+            setMetrics(metricsRes.data || {});
+            setUsers(Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data?.content || []));
+            setJobs(Array.isArray(jobsRes.data) ? jobsRes.data : (jobsRes.data?.content || []));
             setError(null);
         } catch (err) {
             console.error('Error loading admin data:', err);
@@ -107,9 +108,9 @@ const AdminDashboard = () => {
     //         setJobDetails(null);
 
     //         const token = localStorage.getItem('token');
-            // const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/admin/jobs/${jobId}/details`, {
-            //     headers: { Authorization: `Bearer ${token}` }
-            // });
+    // const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/admin/jobs/${jobId}/details`, {
+    //     headers: { Authorization: `Bearer ${token}` }
+    // });
 
     //         if (!response.data) {
     //             throw new Error('No data received');
@@ -153,7 +154,7 @@ const AdminDashboard = () => {
             await axios.delete(`${process.env.REACT_APP_API_BASE_URL}/api/admin/users/${userId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            setUsers(users.filter(user => user._id !== userId));
+            setUsers((Array.isArray(users) ? users : []).filter(user => (user.id !== userId && user._id !== userId)));
             handleCloseModal();
         } catch (err) {
             console.error(err);
@@ -169,9 +170,10 @@ const AdminDashboard = () => {
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 
-            setUsers(users.map(user =>
-                user._id === userId ? { ...user, role: newRole } : user
-            ));
+            const updatedUsers = (Array.isArray(users) ? users : []).map(user =>
+                (user.id === userId || user._id === userId) ? { ...user, role: newRole } : user
+            );
+            setUsers(updatedUsers);
 
             alert('Role updated successfully!');
         } catch (err) {
@@ -187,7 +189,7 @@ const AdminDashboard = () => {
             await axios.delete(`${process.env.REACT_APP_API_BASE_URL}/api/admin/jobs/${jobId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            setJobs(jobs.filter(job => job._id !== jobId));
+            setJobs((Array.isArray(jobs) ? jobs : []).filter(job => (job.id !== jobId && job._id !== jobId)));
             handleCloseModal();
         } catch (err) {
             console.error(err);
@@ -200,11 +202,13 @@ const AdminDashboard = () => {
     }, []);
 
     // Filter users based on active tab and search query
-    const filteredUsers = users.filter(user => {
+    const filteredUsers = (Array.isArray(users) ? users : []).filter(user => {
         const matchesRole = activeUserTab === 'all' || user.role === activeUserTab;
+        const name = user.name || user.fullName || '';
+        const email = user.email || '';
         const matchesSearch = searchQuery === '' ||
-            (user.name && user.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-            (user.email && user.email.toLowerCase().includes(searchQuery.toLowerCase()));
+            name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            email.toLowerCase().includes(searchQuery.toLowerCase());
         return matchesRole && matchesSearch;
     });
 
@@ -238,7 +242,7 @@ const AdminDashboard = () => {
     }
 
     return (
-        
+
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 px-4 py-8">
             {/* Animated Background Elements */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
@@ -284,8 +288,8 @@ const AdminDashboard = () => {
                                                     }`}>
                                                     {selectedUser.role?.toUpperCase() || 'UNKNOWN'}
                                                 </span>
-                                                <button 
-                                                    onClick={() => handleDeleteUser(selectedUser._id)}
+                                                <button
+                                                    onClick={() => handleDeleteUser(selectedUser.id || selectedUser._id)}
                                                     className="text-xs bg-red-500/20 hover:bg-red-500/30 text-red-300 px-2 py-1 rounded-full transition-colors"
                                                 >
                                                     Delete User
@@ -749,7 +753,7 @@ const AdminDashboard = () => {
                         );
                     })}              
                 </div> */}
-                <AnalyticsCard/>
+                <AnalyticsCard />
 
                 {/* Users Management Section */}
                 <div className="bg-white/10 backdrop-blur-xl border border-white/20 p-8 rounded-3xl shadow-2xl">
@@ -830,8 +834,8 @@ const AdminDashboard = () => {
                             </thead>
                             <tbody className="divide-y divide-white/10">
                                 {filteredUsers.length > 0 ? (
-                                    filteredUsers.map((user) => (
-                                        <tr key={user._id} className="hover:bg-white/5 transition-colors duration-200 group">
+                                    (Array.isArray(filteredUsers) ? filteredUsers : []).map((user) => (
+                                        <tr key={user.id || user._id} className="hover:bg-white/5 transition-colors duration-200 group">
                                             <td className="p-4">
                                                 <div className="flex items-center space-x-3">
                                                     <div className="h-8 w-8 bg-gradient-to-br from-emerald-400 to-cyan-400 rounded-full flex items-center justify-center text-white font-semibold text-sm">
@@ -862,7 +866,7 @@ const AdminDashboard = () => {
                                                         <span>Details</span>
                                                     </button>
                                                     <button
-                                                        onClick={() => handleDeleteUser(user._id)}
+                                                        onClick={() => handleDeleteUser(user.id || user._id)}
                                                         className="group/btn bg-red-500/20 hover:bg-red-500/30 text-red-300 hover:text-red-200 px-3 py-2 rounded-lg text-xs font-medium border border-red-500/30 hover:border-red-500/50 transition-all duration-200 flex items-center space-x-1"
                                                     >
                                                         <svg className="h-3 w-3 group-hover/btn:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -872,7 +876,7 @@ const AdminDashboard = () => {
                                                     </button>
                                                     <select
                                                         value={user.role}
-                                                        onChange={(e) => handleChangeUserRole(user._id, e.target.value)}
+                                                        onChange={(e) => handleChangeUserRole(user.id || user._id, e.target.value)}
                                                         className="bg-slate-800/50 border border-white/20 px-3 py-2 rounded-lg text-xs text-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition-all duration-200"
                                                     >
                                                         <option value="student">Student</option>
@@ -896,7 +900,7 @@ const AdminDashboard = () => {
                 </div>
 
                 {/* Jobs Management Section */}
-                <JobManagement/>
+                <JobManagement />
                 {/* <div className="bg-white/10 backdrop-blur-xl border border-white/20 p-8 rounded-3xl shadow-2xl">
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center space-x-3">
@@ -945,7 +949,7 @@ const AdminDashboard = () => {
                             </thead>
                             <tbody className="bg-white/5 divide-y divide-white/10">
                                 {jobs.map((job) => (
-                                    <tr key={job._id} className="hover:bg-white/10">
+                                    <tr key={job.id || job._id} className="hover:bg-white/10">
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="flex items-center">
                                                 <div className="h-8 w-8 bg-gradient-to-br from-purple-400 to-pink-400 rounded-lg flex items-center justify-center mr-3">
@@ -996,7 +1000,7 @@ const AdminDashboard = () => {
                                                     <span>Details</span>
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDeleteJob(job._id)}
+                                                    onClick={() => handleDeleteJob(job.id || job._id)}
                                                     className="group/btn bg-red-500/20 hover:bg-red-500/30 text-red-300 hover:text-red-200 px-3 py-2 rounded-lg text-xs font-medium border border-red-500/30 hover:border-red-500/50 transition-all duration-200 flex items-center space-x-1"
                                                 >
                                                     <svg className="h-3 w-3 group-hover/btn:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">

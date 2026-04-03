@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-// import useCallback from 'react';
-import axios from 'axios';
+import api from '../../utils/api';
 import { useNavigate } from 'react-router-dom';
 
 const JobManagement = () => {
@@ -17,15 +16,9 @@ const JobManagement = () => {
     const fetchJobs = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
-            const headers = { Authorization: `Bearer ${token}` };
-
-            const response = await axios.get(
-                `${process.env.REACT_APP_API_BASE_URL}/api/admin/jobs`,
-                { headers }
-            );
-
-            setJobs(response.data);
+            const response = await api.get('/api/admin/jobs');
+            const jobsArray = Array.isArray(response.data?.content) ? response.data.content : (Array.isArray(response.data) ? response.data : []);
+            setJobs(jobsArray);
             setError(null);
         } catch (err) {
             console.error('Error loading jobs:', err);
@@ -41,11 +34,7 @@ const JobManagement = () => {
             setError(null);
             setJobDetails(null);
 
-            const token = localStorage.getItem('token');
-            const response = await axios.get(
-                `${process.env.REACT_APP_API_BASE_URL}/api/admin/jobs/${jobId}/details`,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+            const response = await api.get(`/api/admin/jobs/${jobId}/details`);
 
             if (!response.data) {
                 throw new Error('No data received');
@@ -62,7 +51,7 @@ const JobManagement = () => {
 
     const handleViewJobDetails = (job) => {
         setSelectedJob(job);
-        fetchJobDetails(job._id);
+        fetchJobDetails(job.id || job._id);
     };
 
     const handleCloseModal = () => {
@@ -74,16 +63,13 @@ const JobManagement = () => {
     const handleDeleteJob = async (jobId) => {
         if (!window.confirm('Are you sure you want to delete this job?')) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(
-                `${process.env.REACT_APP_API_BASE_URL}/api/admin/jobs/${jobId}`,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-            setJobs(jobs.filter(job => job._id !== jobId));
+            await api.delete(`/api/admin/jobs/${jobId}`);
+            setJobs(jobs.filter(job => (job.id || job._id) !== jobId));
             handleCloseModal();
+            alert('✅ Job deleted successfully');
         } catch (err) {
-            console.error(err);
-            alert('Error deleting job');
+            console.error('Error deleting job:', err);
+            alert(err.response?.data?.message || 'Error deleting job');
         }
     };
 
@@ -460,7 +446,7 @@ const JobManagement = () => {
                             <tbody className="bg-white/5 divide-y divide-white/10">
                                 {filteredJobs.length > 0 ? (
                                     filteredJobs.map((job) => (
-                                        <tr key={job._id} className="hover:bg-white/10">
+                                        <tr key={job.id || job._id} className="hover:bg-white/10">
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex items-center">
                                                     <div className="h-8 w-8 bg-gradient-to-br from-purple-400 to-pink-400 rounded-lg flex items-center justify-center mr-3">
@@ -517,7 +503,7 @@ const JobManagement = () => {
                                                     </button>
 
                                                     <button
-                                                        onClick={() => handleDeleteJob(job._id)}
+                                                        onClick={() => handleDeleteJob(job.id || job._id)}
                                                         className="group/btn bg-red-500/20 hover:bg-red-500/30 text-red-300 hover:text-red-200 px-3 py-2 rounded-lg text-xs font-medium border border-red-500/30 hover:border-red-500/50 transition-all duration-200 flex items-center space-x-1"
                                                     >
                                                         <svg className="h-3 w-3 group-hover/btn:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">

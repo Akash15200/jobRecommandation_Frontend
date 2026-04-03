@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../../utils/api';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 const RecruiterAnalytics = () => {
@@ -10,12 +10,7 @@ const RecruiterAnalytics = () => {
         const fetchAnalytics = async () => {
             setLoading(true);
             try {
-                const token = localStorage.getItem('token');
-                console.log("📦 Token being sent:", token);
-
-                const res = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/recruiter/analytics`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const res = await api.get('/api/recruiter/analytics');
                 console.log("✅ Analytics Data Fetched:", res.data);
 
                 setJobs(res.data.applicationsPerJob || []);
@@ -49,12 +44,12 @@ const RecruiterAnalytics = () => {
         );
     }
 
-    const totalApplications = jobs.reduce((acc, job) => acc + (job.applications || 0), 0);
+    const totalApplications = jobs.reduce((acc, job) => acc + (job.applicationCount || 0), 0);
     const averageApplications = (totalApplications / jobs.length).toFixed(1);
 
     const chartData = jobs.map(job => ({
         name: job.title.length > 20 ? job.title.substring(0, 20) + '...' : job.title,
-        Applications: job.applications || 0,
+        Applications: job.applicationCount || 0,
     }));
 
     return (

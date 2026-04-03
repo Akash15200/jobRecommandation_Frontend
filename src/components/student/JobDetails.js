@@ -67,7 +67,8 @@ const JobDetails = ({ jobId, onClose }) => {
 
                 // Fetch job details
                 const jobRes = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/jobs/${jobId}`);
-                setJob(jobRes.data.data);
+                // Spring Boot backend returns the job directly
+                setJob(jobRes.data);
 
                 // Fetch application if user is logged in
                 if (currentUser) {
@@ -80,8 +81,8 @@ const JobDetails = ({ jobId, onClose }) => {
                             }
                         });
 
-                        if (appRes.data.data) {
-                            setApplication(appRes.data.data);
+                        if (appRes.data) {
+                            setApplication(appRes.data);
                         }
                     } catch (appErr) {
                         // No application found is not an error
@@ -126,11 +127,13 @@ const JobDetails = ({ jobId, onClose }) => {
                 }
             );
 
-            if (res.data && res.data.application) {
-                setApplication(res.data.application);
-                alert('Application submitted successfully!');
+            // Robust check: any 2xx response is a success
+            if (res.status === 200 || res.status === 201 || res.data) {
+                setApplication(res.data.application || res.data);
+                alert('✅ Application submitted successfully!');
             } else {
-                throw new Error('Invalid response from server');
+                console.warn('Unexpected response structure:', res.data);
+                throw new Error('Server returned success but response data is missing');
             }
         } catch (err) {
             console.error('Application error:', err);
@@ -191,7 +194,7 @@ const JobDetails = ({ jobId, onClose }) => {
 
     return (
         <div
-            className="fixed inset-0 bg-black/50 z-50 backdrop-blur-sm flex justify-center items-start overflow-y-auto py-10 px-4"
+            className="fixed inset-0 bg-black/50 z-50 backdrop-blur-sm flex justify-center items-center overflow-y-auto py-10 px-4"
             onClick={(e) => e.target === e.currentTarget && onClose()}
             onMouseDown={handleMouseDown}
         >

@@ -1,6 +1,6 @@
 // src/components/recruiter/PostJob.js
 import { useState } from 'react';
-import axios from 'axios';
+import api from '../../utils/api';
 
 const PostJob = () => {
   // Existing state
@@ -21,8 +21,7 @@ const PostJob = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const token = localStorage.getItem('token');
-      await axios.post(`${process.env.REACT_APP_API_BASE_URL}/api/jobs`, {
+      await api.post('/api/jobs', {
         title,
         description,
         requiredSkills: requiredSkills.split(',').map(s => s.trim()),
@@ -32,7 +31,7 @@ const PostJob = () => {
         experience,
         remote, companyName,
         recruiterName
-      }, { headers: { Authorization: `Bearer ${token}` } });
+      });
       setMessage('✅ Job posted successfully.');
       // Reset all fields
       setTitle('');

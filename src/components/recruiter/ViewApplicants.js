@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
+import Pagination from '../common/Pagination';
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const ViewApplicants = () => {
@@ -15,16 +16,18 @@ const ViewApplicants = () => {
     const [notes, setNotes] = useState('');
     const [emailStatus, setEmailStatus] = useState('');
     const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'pending', 'interview_scheduled', 'rejected'
+    const [page, setPage] = useState(0);
+    const [totalPages, setTotalPages] = useState(0);
     const token = localStorage.getItem('token');
 
     const fetchApplicants = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/applications/recruiter/${currentUser._id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setApplications(res.data);
-            setFilteredApplications(res.data);
+            const res = await api.get(`/api/applications/recruiter/${currentUser.id || currentUser._id}?page=${page}&size=10`);
+            const apps = res.data.content || res.data || [];
+            setTotalPages(res.data.totalPages || 0);
+            setApplications(apps);
+            setFilteredApplications(apps);
         } catch (err) {
             console.error('❌ Failed to fetch applicants:', err.response?.data || err.message);
         } finally {
@@ -44,10 +47,9 @@ const ViewApplicants = () => {
 
     const handleDownloadResume = async (applicationId, applicantName) => {
         try {
-            const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/applications/${applicationId}/download-resume`,
+            const response = await api.get(`/api/applications/${applicationId}/download-resume`,
                 {
-                    responseType: 'blob',
-                    headers: { Authorization: `Bearer ${token}` }
+                    responseType: 'blob'
                 }
             );
 
@@ -96,14 +98,13 @@ const ViewApplicants = () => {
 
     const handleStatusChange = async (appId, newStatus, notes = '') => {
         try {
-            await axios.put(`${process.env.REACT_APP_API_BASE_URL}/api/applications/${appId}/status`,
-                { status: newStatus, notes },
-                { headers: { Authorization: `Bearer ${token}` } }
+            await api.put(`/api/applications/${appId}/status`,
+                { status: newStatus, notes }
             );
 
             // Update local state
             setApplications(prev => prev.map(app =>
-                app._id === appId ? { ...app, status: newStatus, notes } : app
+                (app.id || app._id) === appId ? { ...app, status: newStatus, notes } : app
             ));
         } catch (err) {
             console.error('❌ Failed to update status:', err.response?.data || err.message);
@@ -120,18 +121,17 @@ const ViewApplicants = () => {
 
         try {
             // Schedule interview and send email
-            const response = await axios.put(`${process.env.REACT_APP_API_BASE_URL}/api/applications/${currentApplication._id}/schedule-interview`,
-                { interviewDate },
-                { headers: { Authorization: `Bearer ${token}` } }
+            const response = await api.put(`/api/applications/${currentApplication.id || currentApplication._id}/schedule-interview`,
+                { interviewDate }
             );
 
             // Update local state with interview details
             setApplications(prev => prev.map(app =>
-                app._id === currentApplication._id ? {
+                (app.id || app._id) === (currentApplication.id || currentApplication._id) ? {
                     ...app,
                     status: 'interview_scheduled',
-                    interviewDate: response.data.application.interviewDate,
-                    interviewLink: response.data.application.interviewLink
+                    interviewDate: response.data.application?.interviewDate || response.data.interviewDate,
+                    interviewLink: response.data.application?.interviewLink || response.data.interviewLink
                 } : app
             ));
 
@@ -162,7 +162,7 @@ const ViewApplicants = () => {
         if (currentUser?.role === 'recruiter') {
             fetchApplicants();
         }
-    }, [currentUser]);
+    }, [currentUser, page]);
 
     // Get counts for each status
     const getStatusCount = (status) => {
@@ -241,7 +241,7 @@ const ViewApplicants = () => {
                                     if (modalType === 'accept') {
                                         handleSendEmail();
                                     } else {
-                                        handleStatusChange(currentApplication._id, 'rejected', notes);
+                                        handleStatusChange(currentApplication.id || currentApplication._id, 'rejected', notes);
                                         handleCloseModal();
                                     }
                                 }}
@@ -383,7 +383,7 @@ const ViewApplicants = () => {
                         {/* Applications List */}
                         {filteredApplications.map((app, index) => (
                             <div
-                                key={app._id}
+                                key={app.id || app._id}
                                 className="group bg-gradient-to-r from-white/80 to-slate-50/80 border border-slate-200/50 p-6 rounded-2xl hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 hover:scale-[1.02] backdrop-blur-sm relative overflow-hidden"
                                 style={{ animationDelay: `${index * 100}ms` }}
                             >
@@ -405,10 +405,9 @@ const ViewApplicants = () => {
                                                 </h3>
                                                 <p className="text-slate-600 text-sm">{app.user?.email || 'No email'}</p>
                                             </div>
-                                        </div>
-
-                                        {/* Status Badge */}
-                                        <div className={`px-4 py-2 rounded-full text-sm font-semibold ${app.status === 'approved' || app.status === 'hired'
+                                                                                {/* Status Badge */}
+                                        <div className={`px-4 py-2 rounded-full text-sm font-semibold ${
+                                            app.status === 'approved' || app.status === 'hired' || app.status === 'interview_scheduled'
                                             ? 'bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 border border-green-200/50' :
                                             app.status === 'rejected'
                                                 ? 'bg-gradient-to-r from-red-100 to-rose-100 text-red-700 border border-red-200/50' :
@@ -416,25 +415,11 @@ const ViewApplicants = () => {
                                                     ? 'bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-700 border border-amber-200/50'
                                                     : 'bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 border border-blue-200/50'
                                             }`}>
-                                            {app.status === 'approved'
+                                            {app.status === 'approved' || app.status === 'interview_scheduled'
                                                 ? 'Approved'
                                                 : app.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
                                         </div>
-
-                                        {/* Status Badge for Interview Scheduled */}
-                                        <div className={`px-4 py-2 rounded-full text-sm font-semibold ${app.status === 'interview_scheduled' || app.status === 'hired'
-                                            ? 'bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 border border-green-200/50' :
-                                            app.status === 'rejected'
-                                                ? 'bg-gradient-to-r from-red-100 to-rose-100 text-red-700 border border-red-200/50' :
-                                                app.status === 'pending'
-                                                    ? 'bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-700 border border-amber-200/50'
-                                                    : 'bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 border border-blue-200/50'
-                                            }`}>
-                                            {app.status === 'interview_scheduled' ? 'Approved' :
-                                                app.status.split('_').map(word =>
-                                                    word.charAt(0).toUpperCase() + word.slice(1)
-                                                ).join(' ')}
-                                        </div>
+ </div>
                                     </div>
 
                                     {/* Application Details */}
@@ -493,7 +478,7 @@ const ViewApplicants = () => {
                                                 Reject
                                             </button>
                                             <button
-                                                onClick={() => handleDownloadResume(app._id, app.user?.name || 'Resume')}
+                                                onClick={() => handleDownloadResume(app.id || app._id, app.user?.name || 'Resume')}
                                                 className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white px-4 py-3 rounded-xl font-semibold transition-all duration-200 shadow-lg hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
                                             >
                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -552,6 +537,12 @@ const ViewApplicants = () => {
                                 </div>
                             </div>
                         ))}
+                        
+                        <Pagination 
+                            currentPage={page} 
+                            totalPages={totalPages} 
+                            onPageChange={(newPage) => setPage(newPage)} 
+                        />
                     </div>
                 )}
             </div>

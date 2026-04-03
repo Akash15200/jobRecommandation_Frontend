@@ -1,35 +1,38 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import JobCard from '../components/student/JobCard';
 import UploadResume from '../components/student/UploadResume';
 import StudentAnalytics from '../components/student/StudentAnalytics';
 import ProfileSection from '../components/student/ProfileSection';
-import LogoutButton from '../components/LogoutButton';
-import { useNavigate } from 'react-router-dom';
+import LogoutButton from '../components/common/LogoutButton';
+import { useNavigate, useParams } from 'react-router-dom';
 import JobDetails from '../components/student/JobDetails';
+import api from '../utils/api';
+import Pagination from '../components/common/Pagination';
+import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
-import { useParams } from 'react-router-dom';
+
 const StudentDashboard = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const { jobId } = useParams();
 
   // State declarations
-  const [jobs, setJobs] = useState([]);
   const [userSkills, setUserSkills] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [appliedJobs, setAppliedJobs] = useState([]);
-  const [appliedJobsLoading, setAppliedJobsLoading] = useState(true);
-  const [filteredJobs, setFilteredJobs] = useState([]);
   const [statusFilter, setStatusFilter] = useState(null);
   const [selectedJob, setSelectedJob] = useState(null);
   const [showJobDetails, setShowJobDetails] = useState(false);
   const [hasUploadedResume, setHasUploadedResume] = useState(false);
+  const [page, setPage] = useState(0);
+  const [showAppliedJobs, setShowAppliedJobs] = useState(false);
 
   // Check for previously uploaded resume on initial load
+  // Sync local data on mount
   useEffect(() => {
     const hasResume = localStorage.getItem('hasUploadedResume') === 'true';
-    setHasUploadedResume(hasResume);
+    if (hasResume) {
+      setHasUploadedResume(true);
+    }
   }, []);
 
   // Load user skills
@@ -39,76 +42,100 @@ const StudentDashboard = () => {
     }
   }, [currentUser]);
 
-  // Fetch recommended jobs
-  useEffect(() => {
-    const fetchJobs = async () => {
-      if (!hasUploadedResume) return;
-      setLoading(true);
-      try {
-        const jobsRes = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/jobs`);
-        const allJobs = jobsRes.data;
+  // Use React Query for fetching recommended jobs
+  const {
+    data: jobsData,
+    isLoading: loading,
+    error: fetchError
+  } = useQuery({
+    queryKey: ['recommendedJobs', page, userSkills, hasUploadedResume],
+    queryFn: async () => {
+      // Fetch jobs whether or not they have a resume (so something is always visible)
+      console.log('Fetching active jobs from backend...');
+      const jobsRes = await api.get(`/api/jobs?page=${page}&size=10`);
+      const allJobs = jobsRes.data.content || jobsRes.data || [];
+      const totalPages = jobsRes.data.totalPages || 0;
+      
+      if (!hasUploadedResume || allJobs.length === 0) {
+          return { jobs: allJobs, totalPages, fitScores: {}, allJobs };
+      }
 
-        // If no skills, show all jobs with a warning
-        if (userSkills.length === 0) {
-          console.warn('No skills available - showing all jobs');
-          setJobs(allJobs);
-          return;
+      let scores = {};
+      let rankedJobs = [...allJobs];
+
+      // 1. Fetch Fit Scores in Batch (shows match scores for all fetched jobs)
+      try {
+        console.log('Calculating fit scores for', allJobs.length, 'jobs');
+        const fitRes = await api.post('/api/applications/calculate-fit-batch', {
+          jobIds: allJobs.map(j => j.id || j._id),
+          resumeSkills: userSkills
+        });
+        scores = fitRes.data || {};
+      } catch (fitErr) {
+        console.error('Error fetching batch fit scores:', fitErr);
+      }
+
+      // 2. ML Ranking (Try matching but don't filter out unmatched ones)
+      if (userSkills.length > 0) {
+        try {
+          console.log('Requesting ML ranking for user skills...');
+          const matchRes = await axios.post(
+            `${process.env.REACT_APP_ML_API_URL}/match_jobs`,
+            {
+              skills: userSkills,
+              jobs: allJobs.map(job => ({ id: job.id || job._id, requiredSkills: job.requiredSkills || [] }))
+            }
+          );
+          
+          const matchedIds = (matchRes.data?.matches || []).map(m => m.id || m._id);
+          
+          if (matchedIds.length > 0) {
+            // Sort jobs: matched ones first, then by match score if available
+            rankedJobs.sort((a, b) => {
+              const aId = a.id || a._id;
+              const bId = b.id || b._id;
+              const aMatched = matchedIds.includes(aId);
+              const bMatched = matchedIds.includes(bId);
+              
+              if (aMatched && !bMatched) return -1;
+              if (!aMatched && bMatched) return 1;
+              
+              // Second sort: higher match score first
+              return (scores[bId] || 0) - (scores[aId] || 0);
+            });
+            console.log('Jobs ranked by relevance.');
+          }
+        } catch (mlErr) {
+          console.error('ML Ranking failed, using score-only sorting:', mlErr);
+          rankedJobs.sort((a, b) => (scores[b.id || b._id] || 0) - (scores[a.id || a._id] || 0));
         }
-
-        const matchingPayload = {
-          skills: userSkills,
-          jobs: allJobs.map(job => ({
-            _id: job._id,
-            requiredSkills: job.requiredSkills || [],
-          }))
-        };
-
-
-        const matchRes = await axios.post(
-          `${process.env.REACT_APP_ML_API_URL}/match_jobs`,
-          matchingPayload
-        );
-        const matchedJobs = allJobs.filter(job =>
-          matchRes.data.matches.filter(tj=>tj._id===job._id)
-        );
-        
-        setJobs(matchedJobs);
-
-      } catch (err) {
-        console.error('Error:', err);
-        // Fallback: Show all jobs if matching fails
-        const jobsRes = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/jobs`);
-        setJobs(jobsRes.data);
-      } finally {
-        setLoading(false);
       }
-    };
 
-    if (currentUser?.role === 'student' && hasUploadedResume) {
-      fetchJobs();
-    }
-  }, [userSkills, currentUser?.role, hasUploadedResume]);
+      return { jobs: rankedJobs, totalPages, fitScores: scores, allJobs };
+    },
+    enabled: !!(currentUser && currentUser.role?.toLowerCase() === 'student')
+  });
 
-  // Fetch applied jobs
-  useEffect(() => {
-    const fetchAppliedJobs = async () => {
-      if (!currentUser?._id) return;
-      setAppliedJobsLoading(true);
-      try {
-        const res = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/applications/user/${currentUser._id}`);
-        const filtered = res.data.filter(app => app.job).map(app => ({
-          ...app,
-          status: app.status.toLowerCase()
-        }));
-        setAppliedJobs(filtered);
-      } catch (err) {
-        console.error('❌ Failed to fetch applied jobs:', err.response?.data || err.message);
-      } finally {
-        setAppliedJobsLoading(false);
-      }
-    };
-    if (currentUser?.role === 'student') fetchAppliedJobs();
-  }, [currentUser]);
+  const { jobs = [], totalPages = 0, fitScores = {}, allJobs = [] } = jobsData || {};
+
+  const {
+    data: appliedJobsData,
+    isLoading: appliedJobsLoading,
+  } = useQuery({
+    queryKey: ['appliedJobs', currentUser?.id || currentUser?._id],
+    queryFn: async () => {
+      if (!currentUser) return [];
+    const res = await api.get('/api/applications');
+      const applications = res.data.content || res.data;
+      return Array.isArray(applications) ? applications.map(app => ({
+        ...app,
+        status: app.status.toLowerCase()
+      })) : [];
+    },
+    enabled: !!currentUser && (currentUser.role === 'student' || currentUser.role === 'STUDENT'),
+  });
+
+  const appliedJobs = appliedJobsData || [];
 
   // Handle resume parse update
   const handleResumeParsed = (parsedData) => {
@@ -116,8 +143,6 @@ const StudentDashboard = () => {
       setUserSkills(parsedData.skills);
       setHasUploadedResume(true);
       localStorage.setItem('hasUploadedResume', 'true');
-      // Reset jobs to trigger refetch
-      setJobs([]);
     } else {
       alert('No skills found in the uploaded resume.');
     }
@@ -129,42 +154,43 @@ const StudentDashboard = () => {
 
     // Track in recent jobs
     let viewed = JSON.parse(localStorage.getItem('recentJobs')) || [];
-    viewed = [job, ...viewed.filter(j => j._id !== job._id)].slice(0, 5);
+    const id = job.id || job._id;
+    viewed = [job, ...viewed.filter(j => (j.id || j._id) !== id)].slice(0, 5);
     localStorage.setItem('recentJobs', JSON.stringify(viewed));
   };
 
-  // Handle applied job click
+  /**  Handle applied job click */
   const handleAppliedJobClick = (job) => {
     setSelectedJob(job);
     setShowJobDetails(true);
 
     let viewed = JSON.parse(localStorage.getItem('recentJobs')) || [];
-    viewed = [job, ...viewed.filter(j => j._id !== job._id)].slice(0, 5);
+    const id = job.id || job._id;
+    viewed = [job, ...viewed.filter(j => (j.id || j._id) !== id)].slice(0, 5);
     localStorage.setItem('recentJobs', JSON.stringify(viewed));
   };
 
   // Filter applied jobs by status
   const filterByStatus = (status) => {
     if (status === 'all') {
-      setFilteredJobs(appliedJobs);
       setStatusFilter(null);
-      // console.log("applied jobs anurag ",appliedJobs);
     } else {
-      setFilteredJobs(appliedJobs.filter(job => job.status === status));
       setStatusFilter(status);
     }
+    setShowAppliedJobs(true);
   };
 
-  // Clear status filter
+  const filteredJobs = useMemo(() => {
+    if (!statusFilter) return appliedJobs;
+    return appliedJobs.filter(job => job.status === statusFilter);
+  }, [appliedJobs, statusFilter]);
+
+  // Clear status filter and hide list
   const clearFilter = () => {
-    setFilteredJobs([]);
     setStatusFilter(null);
+    setShowAppliedJobs(false);
   };
 
-  useEffect(() => {
-    const hasResume = localStorage.getItem('hasUploadedResume') === 'true';
-    setHasUploadedResume(hasResume);
-  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 px-4 py-8">
@@ -208,9 +234,9 @@ const StudentDashboard = () => {
           />
         </div>
 
-        {/* Applied Jobs List (only shown when filtered) */}
-        {filteredJobs.length > 0 && (
-          <div className="bg-white/10 backdrop-blur-xl p-8 rounded-3xl border border-white/20 shadow-2xl">
+        {/* Applied Jobs List (Visible by default if exists, or when status clicked) */}
+        {showAppliedJobs && appliedJobs.length > 0 && (
+          <div className="bg-white/10 backdrop-blur-xl p-8 rounded-3xl border border-white/20 shadow-2xl relative animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-cyan-400">
                 {statusFilter === 'approved'
@@ -231,7 +257,7 @@ const StudentDashboard = () => {
                 const jobExists = !!application.job;
                 return (
                   <div
-                    key={application._id}
+                    key={application.id || application._id}
                     className={`bg-white/10 backdrop-blur-sm p-6 rounded-2xl border border-white/20 shadow-lg transition ${jobExists
                       ? 'hover:shadow-emerald-400/20 cursor-pointer'
                       : 'cursor-not-allowed'
@@ -241,15 +267,13 @@ const StudentDashboard = () => {
                     <div className="flex flex-col md:flex-row md:justify-between md:items-center">
                       <div className="flex-1">
                         <h3 className="text-xl font-bold text-emerald-300">
-                          {jobExists ? application.job.title : 'Job no longer available'}
+                          {application.jobTitle || (application.job && application.job.title) || 'Job no longer available'}
                         </h3>
                         <p className="text-gray-300">
-                          {jobExists
-                            ? application.job.companyName
-                            : 'Unknown Company'}
+                          {application.companyName || (application.job && application.job.companyName) || 'Unknown Company'}
                         </p>
                         <p className="text-gray-400 text-sm mt-2">
-                          Applied on: {new Date(application.appliedAt).toLocaleDateString()}
+                          Applied on: {new Date(application.createdAt).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="mt-4 md:mt-0 flex flex-col items-start md:items-end">
@@ -262,8 +286,8 @@ const StudentDashboard = () => {
                           {application.status.toUpperCase()}
                         </span>
                         <div className="text-sm text-gray-300 mt-2">
-                          <p>Recruiter: {jobExists
-                            ? (application.job.recruiterName || 'N/A')
+                          <p>Recruiter: {application.job && application.job.recruiter
+                            ? application.job.recruiter.name
                             : 'N/A'}</p>
                         </div>
                       </div>
@@ -327,7 +351,7 @@ const StudentDashboard = () => {
             <div className="bg-white/10 backdrop-blur-xl p-8 rounded-3xl border border-white/20 shadow-2xl">
               <div className="flex items-center space-x-3 mb-6">
                 <span className="text-3xl">💼</span>
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+                <h2 id="recommended-jobs-title" className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
                   Recommended Jobs
                 </h2>
               </div>
@@ -351,22 +375,39 @@ const StudentDashboard = () => {
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-400"></div>
                   <p className="text-gray-300">Finding perfect matches for you...</p>
                 </div>
+              ) : (jobs.length === 0 && allJobs.length === 0) ? (
+                <div className="text-center py-12">
+                  <div className="text-5xl mb-4">📢</div>
+                  <p className="text-gray-300">No active jobs available in the system yet.</p>
+                  <p className="text-gray-400 text-sm mt-2">Check back later or try updating your resume.</p>
+                </div>
               ) : jobs.length === 0 ? (
                 <div className="text-center py-12">
                   <div className="text-5xl mb-4">🔍</div>
-                  <p className="text-gray-300">No jobs matching your skills currently.</p>
-                  <p className="text-gray-400 text-sm mt-2">Try updating your resume with more skills</p>
+                  <p className="text-gray-300">No jobs matching your specific skills currently.</p>
+                  <p className="text-gray-400 text-sm mt-2">Try updating your resume with more skills or exploring all jobs.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {jobs.map((job) => (
-                    <JobCard
-                      key={job._id}
-                      job={job}
-                      userSkills={userSkills}
-                      onClick={handleJobClick}
-                    />
-                  ))}
+                    {jobs.map((job) => (
+                      <JobCard
+                        key={job.id || job._id}
+                        job={job}
+                        userSkills={userSkills}
+                        onJobClick={handleJobClick}
+                        preCalculatedFitScore={fitScores[job.id || job._id]}
+                      />
+                    ))}
+                  
+                  <Pagination 
+                    currentPage={page} 
+                    totalPages={totalPages} 
+                    onPageChange={(newPage) => {
+                      setPage(newPage);
+                      // Scroll to top of job list
+                      document.getElementById('recommended-jobs-title')?.scrollIntoView({ behavior: 'smooth' });
+                    }} 
+                  />
                 </div>
               )}
             </div>
@@ -378,7 +419,7 @@ const StudentDashboard = () => {
         <div className="fixed inset-0 bg-black/80 backdrop-blur-lg z-50 flex items-center justify-center p-4">
           <div className="relative max-w-4xl w-full">
             <JobDetails
-              jobId={selectedJob._id}
+              jobId={selectedJob.id || selectedJob._id}
               onClose={() => setShowJobDetails(false)}
             />
           </div>
