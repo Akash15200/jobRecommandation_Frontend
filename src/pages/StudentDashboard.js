@@ -24,11 +24,15 @@ const StudentDashboard = () => {
   const [showJobDetails, setShowJobDetails] = useState(false);
   const [hasUploadedResume, setHasUploadedResume] = useState(false);
   const [page, setPage] = useState(0);
+  const [showAppliedJobs, setShowAppliedJobs] = useState(false);
 
   // Check for previously uploaded resume on initial load
+  // Sync local data on mount
   useEffect(() => {
     const hasResume = localStorage.getItem('hasUploadedResume') === 'true';
-    setHasUploadedResume(hasResume);
+    if (hasResume) {
+      setHasUploadedResume(true);
+    }
   }, []);
 
   // Load user skills
@@ -46,61 +50,73 @@ const StudentDashboard = () => {
   } = useQuery({
     queryKey: ['recommendedJobs', page, userSkills, hasUploadedResume],
     queryFn: async () => {
-      if (!hasUploadedResume) return { jobs: [], totalPages: 0, fitScores: {} };
-
-      // 1. Fetch Jobs from Backend
+      // Fetch jobs whether or not they have a resume (so something is always visible)
+      console.log('Fetching active jobs from backend...');
       const jobsRes = await api.get(`/api/jobs?page=${page}&size=10`);
       const allJobs = jobsRes.data.content || jobsRes.data || [];
       const totalPages = jobsRes.data.totalPages || 0;
+      
+      if (!hasUploadedResume || allJobs.length === 0) {
+          return { jobs: allJobs, totalPages, fitScores: {}, allJobs };
+      }
 
-      let finalJobs = allJobs;
       let scores = {};
+      let rankedJobs = [...allJobs];
 
-      // 2. ML Matching (if skills exist)
+      // 1. Fetch Fit Scores in Batch (shows match scores for all fetched jobs)
+      try {
+        console.log('Calculating fit scores for', allJobs.length, 'jobs');
+        const fitRes = await api.post('/api/applications/calculate-fit-batch', {
+          jobIds: allJobs.map(j => j.id || j._id),
+          resumeSkills: userSkills
+        });
+        scores = fitRes.data || {};
+      } catch (fitErr) {
+        console.error('Error fetching batch fit scores:', fitErr);
+      }
+
+      // 2. ML Ranking (Try matching but don't filter out unmatched ones)
       if (userSkills.length > 0) {
         try {
-          const matchingPayload = {
-            skills: userSkills,
-            jobs: allJobs.map(job => ({
-              id: job.id || job._id,
-              requiredSkills: job.requiredSkills || [],
-            }))
-          };
-
+          console.log('Requesting ML ranking for user skills...');
           const matchRes = await axios.post(
             `${process.env.REACT_APP_ML_API_URL}/match_jobs`,
-            matchingPayload
+            {
+              skills: userSkills,
+              jobs: allJobs.map(job => ({ id: job.id || job._id, requiredSkills: job.requiredSkills || [] }))
+            }
           );
-
-          const matches = matchRes.data?.matches || [];
-          if (matches.length > 0) {
-            finalJobs = allJobs.filter(job =>
-              matches.some(tj => (tj.id || tj._id) === (job.id || job._id))
-            );
+          
+          const matchedIds = (matchRes.data?.matches || []).map(m => m.id || m._id);
+          
+          if (matchedIds.length > 0) {
+            // Sort jobs: matched ones first, then by match score if available
+            rankedJobs.sort((a, b) => {
+              const aId = a.id || a._id;
+              const bId = b.id || b._id;
+              const aMatched = matchedIds.includes(aId);
+              const bMatched = matchedIds.includes(bId);
+              
+              if (aMatched && !bMatched) return -1;
+              if (!aMatched && bMatched) return 1;
+              
+              // Second sort: higher match score first
+              return (scores[bId] || 0) - (scores[aId] || 0);
+            });
+            console.log('Jobs ranked by relevance.');
           }
         } catch (mlErr) {
-          console.error('ML Filtering failed, showing all jobs:', mlErr);
-        }
-
-        // 3. Fetch Fit Scores in Batch
-        if (finalJobs.length > 0) {
-          try {
-            const fitRes = await api.post('/api/applications/calculate-fit-batch', {
-              jobIds: finalJobs.map(j => j.id || j._id),
-              resumeSkills: userSkills
-            });
-            scores = fitRes.data;
-          } catch (fitErr) {
-            console.error('Error fetching batch fit scores:', fitErr);
-          }
+          console.error('ML Ranking failed, using score-only sorting:', mlErr);
+          rankedJobs.sort((a, b) => (scores[b.id || b._id] || 0) - (scores[a.id || a._id] || 0));
         }
       }
-      return { jobs: finalJobs, totalPages, fitScores: scores };
+
+      return { jobs: rankedJobs, totalPages, fitScores: scores, allJobs };
     },
-    enabled: !!(currentUser?.role === 'student' && hasUploadedResume)
+    enabled: !!(currentUser && currentUser.role?.toLowerCase() === 'student')
   });
 
-  const { jobs = [], totalPages = 0, fitScores = {} } = jobsData || {};
+  const { jobs = [], totalPages = 0, fitScores = {}, allJobs = [] } = jobsData || {};
 
   const {
     data: appliedJobsData,
@@ -109,7 +125,7 @@ const StudentDashboard = () => {
     queryKey: ['appliedJobs', currentUser?.id || currentUser?._id],
     queryFn: async () => {
       if (!currentUser) return [];
-      const res = await api.get('/api/applications');
+    const res = await api.get('/api/applications');
       const applications = res.data.content || res.data;
       return Array.isArray(applications) ? applications.map(app => ({
         ...app,
@@ -161,6 +177,7 @@ const StudentDashboard = () => {
     } else {
       setStatusFilter(status);
     }
+    setShowAppliedJobs(true);
   };
 
   const filteredJobs = useMemo(() => {
@@ -168,15 +185,12 @@ const StudentDashboard = () => {
     return appliedJobs.filter(job => job.status === statusFilter);
   }, [appliedJobs, statusFilter]);
 
-  // Clear status filter
+  // Clear status filter and hide list
   const clearFilter = () => {
     setStatusFilter(null);
+    setShowAppliedJobs(false);
   };
 
-  useEffect(() => {
-    const hasResume = localStorage.getItem('hasUploadedResume') === 'true';
-    setHasUploadedResume(hasResume);
-  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 px-4 py-8">
@@ -220,9 +234,9 @@ const StudentDashboard = () => {
           />
         </div>
 
-        {/* Applied Jobs List (only shown when filtered) */}
-        {filteredJobs.length > 0 && (
-          <div className="bg-white/10 backdrop-blur-xl p-8 rounded-3xl border border-white/20 shadow-2xl">
+        {/* Applied Jobs List (Visible by default if exists, or when status clicked) */}
+        {showAppliedJobs && appliedJobs.length > 0 && (
+          <div className="bg-white/10 backdrop-blur-xl p-8 rounded-3xl border border-white/20 shadow-2xl relative animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-cyan-400">
                 {statusFilter === 'approved'
@@ -361,11 +375,17 @@ const StudentDashboard = () => {
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-400"></div>
                   <p className="text-gray-300">Finding perfect matches for you...</p>
                 </div>
+              ) : (jobs.length === 0 && allJobs.length === 0) ? (
+                <div className="text-center py-12">
+                  <div className="text-5xl mb-4">📢</div>
+                  <p className="text-gray-300">No active jobs available in the system yet.</p>
+                  <p className="text-gray-400 text-sm mt-2">Check back later or try updating your resume.</p>
+                </div>
               ) : jobs.length === 0 ? (
                 <div className="text-center py-12">
                   <div className="text-5xl mb-4">🔍</div>
-                  <p className="text-gray-300">No jobs matching your skills currently.</p>
-                  <p className="text-gray-400 text-sm mt-2">Try updating your resume with more skills</p>
+                  <p className="text-gray-300">No jobs matching your specific skills currently.</p>
+                  <p className="text-gray-400 text-sm mt-2">Try updating your resume with more skills or exploring all jobs.</p>
                 </div>
               ) : (
                 <div className="space-y-4">

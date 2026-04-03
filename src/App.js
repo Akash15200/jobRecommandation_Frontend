@@ -1,7 +1,10 @@
 import { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import PrivateRoute from './components/routes/PrivateRoute';
+import { AnimatePresence } from 'framer-motion';
+import { useLocation } from 'react-router-dom';
+import PageTransition from './components/common/PageTransition';
 
 // Lazy load components for code splitting
 const StudentDashboard = lazy(() => import('./pages/StudentDashboard'));
@@ -43,32 +46,36 @@ const DashboardRouter = () => {
 };
 
 function App() {
+  const location = useLocation();
+
   return (
-    <Router>
-      <AuthProvider>
-        <div className="min-h-screen bg-gray-50">
-          <Suspense fallback={<LoadingFallback />}>
-            <Routes>
-              <Route path='/' element={<HomePage />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
+    <AuthProvider>
+      <div className="min-h-screen bg-gray-50">
+        <Suspense fallback={<LoadingFallback />}>
+          <AnimatePresence mode="wait">
+            <Routes location={location} key={location.pathname}>
+              <Route path='/' element={<PageTransition><HomePage /></PageTransition>} />
+              <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
+              <Route path="/signup" element={<PageTransition><Signup /></PageTransition>} />
               <Route
                 path="/dashboard"
                 element={
                   <PrivateRoute>
-                    <DashboardRouter />
+                    <PageTransition>
+                      <DashboardRouter />
+                    </PageTransition>
                   </PrivateRoute>
                 }
               />
-              <Route path="/recent-jobs" element={<RecentJobsPage />} />
-              <Route path="/student/dashboard" element={<StudentDashboard />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/recent-jobs" element={<PageTransition><RecentJobsPage /></PageTransition>} />
+              <Route path="/student/dashboard" element={<PageTransition><StudentDashboard /></PageTransition>} />
+              <Route path="/forgot-password" element={<PageTransition><ForgotPassword /></PageTransition>} />
+              <Route path="/reset-password" element={<PageTransition><ResetPassword /></PageTransition>} />
             </Routes>
-          </Suspense>
-        </div>
-      </AuthProvider>
-    </Router>
+          </AnimatePresence>
+        </Suspense>
+      </div>
+    </AuthProvider>
   );
 }
 

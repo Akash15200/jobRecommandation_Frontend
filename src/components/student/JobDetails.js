@@ -127,11 +127,13 @@ const JobDetails = ({ jobId, onClose }) => {
                 }
             );
 
-            if (res.data && res.data.application) {
+            // Robust check: any 2xx response is a success
+            if (res.status === 200 || res.status === 201 || res.data) {
                 setApplication(res.data.application || res.data);
-                alert('Application submitted successfully!');
+                alert('✅ Application submitted successfully!');
             } else {
-                throw new Error('Invalid response from server');
+                console.warn('Unexpected response structure:', res.data);
+                throw new Error('Server returned success but response data is missing');
             }
         } catch (err) {
             console.error('Application error:', err);

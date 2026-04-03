@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
 import { useQuery } from '@tanstack/react-query';
 import api from '../utils/api';
 import LogoutButton from '../components/common/LogoutButton';
@@ -55,10 +54,8 @@ const AdminDashboard = () => {
         try {
             setDetailsLoading(true);
             setLocalError(null);
-            const token = localStorage.getItem('token');
 
-            const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/admin/users/${userId}/analytics`, {
-                headers: { Authorization: `Bearer ${token}` },
+            const response = await api.get(`/api/admin/users/${userId}/analytics`, {
                 timeout: 10000
             });
 
@@ -159,47 +156,37 @@ const AdminDashboard = () => {
     const handleDeleteUser = async (userId) => {
         if (!window.confirm('Are you sure you want to delete this user?')) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`${process.env.REACT_APP_API_BASE_URL}/api/admin/users/${userId}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            await api.delete(`/api/admin/users/${userId}`);
             fetchAdminData();
             handleCloseModal();
+            alert('✅ User deleted successfully');
         } catch (err) {
-            console.error(err);
-            alert('Error deleting user');
+            console.error('Error deleting user:', err);
+            alert(err.response?.data?.message || 'Error deleting user');
         }
     };
 
     const handleChangeUserRole = async (userId, newRole) => {
         try {
-            const token = localStorage.getItem('token');
-            await axios.patch(`${process.env.REACT_APP_API_BASE_URL}/api/admin/users/${userId}/role`,
-                { role: newRole },
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-
+            await api.patch(`/api/admin/users/${userId}/role`, { role: newRole });
             fetchAdminData(); // Refresh to ensure data sync
-
-            alert('Role updated successfully!');
+            alert('✅ Role updated successfully!');
         } catch (err) {
             console.error('Error updating role:', err);
-            alert(err.response?.data?.msg || 'Failed to update role.');
+            alert(err.response?.data?.message || err.response?.data?.msg || 'Failed to update role.');
         }
     };
 
     const handleDeleteJob = async (jobId) => {
         if (!window.confirm('Are you sure you want to delete this job?')) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`${process.env.REACT_APP_API_BASE_URL}/api/admin/jobs/${jobId}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            await api.delete(`/api/admin/jobs/${jobId}`);
             fetchAdminData();
             handleCloseModal();
+            alert('✅ Job deleted successfully');
         } catch (err) {
-            console.error(err);
-            alert('Error deleting job');
+            console.error('Error deleting job:', err);
+            alert(err.response?.data?.message || 'Error deleting job');
         }
     };
 
@@ -953,7 +940,7 @@ const AdminDashboard = () => {
                             </thead>
                             <tbody className="bg-white/5 divide-y divide-white/10">
                                 {jobs.map((job) => (
-                                    <tr key={job._id} className="hover:bg-white/10">
+                                    <tr key={job.id || job._id} className="hover:bg-white/10">
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="flex items-center">
                                                 <div className="h-8 w-8 bg-gradient-to-br from-purple-400 to-pink-400 rounded-lg flex items-center justify-center mr-3">
@@ -1004,7 +991,7 @@ const AdminDashboard = () => {
                                                     <span>Details</span>
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDeleteJob(job._id)}
+                                                    onClick={() => handleDeleteJob(job.id || job._id)}
                                                     className="group/btn bg-red-500/20 hover:bg-red-500/30 text-red-300 hover:text-red-200 px-3 py-2 rounded-lg text-xs font-medium border border-red-500/30 hover:border-red-500/50 transition-all duration-200 flex items-center space-x-1"
                                                 >
                                                     <svg className="h-3 w-3 group-hover/btn:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">

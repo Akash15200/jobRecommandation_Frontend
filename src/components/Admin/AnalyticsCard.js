@@ -1,6 +1,5 @@
-// src/components/admin/AnalyticsCard.js
 import { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import api from '../../utils/api';
 import {
   BarChart,
   Bar,
@@ -28,14 +27,10 @@ const AnalyticsCard = () => {
     try {
       
       setLoading(true);
-      const token = localStorage.getItem('token');
-      const response = await axios.get(
-        `${process.env.REACT_APP_API_BASE_URL}/api/admin/analyticsCard`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          params: { range: timeRange }
-        }
-      );
+      console.log('Fetching analytics for range:', timeRange);
+      const response = await api.get('/api/admin/analyticsCard', {
+        params: { range: timeRange }
+      });
 
       console.log(response.data.userActivity);
 
@@ -286,7 +281,7 @@ const AnalyticsCard = () => {
                       outerRadius={80}
                       fill="#8884d8"
                       dataKey="value"
-                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      label={({ name, percent }) => `${name}: ${(Number(percent) * 100).toFixed(0)}%`}
                       animationDuration={1500}
                     >
                       {analyticsData.roleDistribution.map((entry, index) => (

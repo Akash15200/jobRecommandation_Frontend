@@ -50,17 +50,17 @@ const JobCard = ({ job, userSkills = [], onJobClick, preCalculatedFitScore }) =>
 
     setApplying(true);
     try {
-      const response = await api.post('/api/applications',
-        {
-          jobId: job.id || job._id
-        }
-      );
+      const response = await api.post('/api/applications', {
+        jobId: job.id || job._id
+      });
 
-      if (response.data && response.data.id) {
+      // Robust check: any 2xx response with a truthy body is a success
+      if (response.status === 200 || response.status === 201 || (response.data && (response.data.id || response.data._id))) {
         setApplied(true);
         alert('✅ Application submitted successfully!');
       } else {
-        throw new Error('Invalid response from server');
+        console.warn('Unexpected response structure:', response.data);
+        throw new Error('Server returned a success status but missing application ID');
       }
     } catch (error) {
       console.error('Application error:', error);
