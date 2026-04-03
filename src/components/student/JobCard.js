@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 
 const JobCard = ({ job, userSkills = [], onJobClick, preCalculatedFitScore }) => {
@@ -23,7 +23,7 @@ const JobCard = ({ job, userSkills = [], onJobClick, preCalculatedFitScore }) =>
   const calculateFitScore = async () => {
     setIsLoading(true);
     try {
-      const res = await axios.post(`${process.env.REACT_APP_API_BASE_URL}/api/applications/calculate-fit`, {
+      const res = await api.post('/api/applications/calculate-fit', {
         resumeSkills: userSkills,
         jobId: job.id || job._id,
       });
@@ -50,12 +50,7 @@ const JobCard = ({ job, userSkills = [], onJobClick, preCalculatedFitScore }) =>
 
     setApplying(true);
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
-
-      const response = await axios.post(`${process.env.REACT_APP_API_BASE_URL}/api/applications`,
+      const response = await api.post('/api/applications',
         {
           jobId: job.id || job._id
         }

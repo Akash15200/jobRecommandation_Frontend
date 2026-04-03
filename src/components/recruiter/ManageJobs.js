@@ -1,6 +1,5 @@
-// src/components/recruiter/ManageJobs.js
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../../utils/api';
 import Pagination from '../common/Pagination';
 
 const ManageJobs = () => {
@@ -16,9 +15,7 @@ const ManageJobs = () => {
   const fetchJobs = async () => {
     const token = localStorage.getItem('token');
     try {
-      const res = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/jobs/my-jobs?page=${page}&size=10`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.get(`/api/jobs/my-jobs?page=${page}&size=10`);
       const data = res.data;
       const jobsArray = data?.content || data || [];
       setTotalPages(data?.totalPages || 0);
@@ -32,23 +29,22 @@ const ManageJobs = () => {
   const handleDelete = async (id) => {
     const confirm = window.confirm('Delete this job?');
     if (!confirm) return;
-    const token = localStorage.getItem('token');
-
     try {
-      await axios.delete(`${process.env.REACT_APP_API_BASE_URL}/api/jobs/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/api/jobs/${id}`);
 
-      setJobs(prevJobs => prevJobs.filter(job => job.id.toString() !== id.toString()));
-      // If the page is now empty and not on the first page, go back a page
-      if (jobs.length === 1 && page > 0) {
-        setPage(page - 1);
-      } else {
-        fetchJobs(); // Refresh to get next item from next page if any
-      }
+      setJobs(prevJobs => {
+        const updatedJobs = prevJobs.filter(job => (job.id || job._id).toString() !== id.toString());
+        // If the page is now empty and not on the first page, go back a page
+        if (updatedJobs.length === 0 && page > 0) {
+          setPage(page - 1);
+        } else if (updatedJobs.length < prevJobs.length) {
+          fetchJobs(); // Refresh to get next item from next page if any
+        }
+        return updatedJobs;
+      });
       
       // Close modal if deleting the currently viewed job
-      if (selectedJob && selectedJob.id === id) {
+      if (selectedJob && (selectedJob.id || selectedJob._id) === id) {
         setShowModal(false);
       }
     } catch (err) {
@@ -378,10 +374,9 @@ const ManageJobs = () => {
                     isActive: editFormData.isActive
                   };
                   try {
-                    await axios.put(
-                      `${process.env.REACT_APP_API_BASE_URL}/api/recruiter/jobs/${editFormData.id}`,
-                      updateData,
-                      { headers: { Authorization: `Bearer ${token}` } }
+                    await api.put(
+                      `/api/recruiter/jobs/${editFormData.id || editFormData._id}`,
+                      updateData
                     );
                     setEditModalOpen(false);
                     fetchJobs();

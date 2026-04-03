@@ -100,6 +100,8 @@ const StudentDashboard = () => {
     enabled: !!(currentUser?.role === 'student' && hasUploadedResume)
   });
 
+  const { jobs = [], totalPages = 0, fitScores = {} } = jobsData || {};
+
   const {
     data: appliedJobsData,
     isLoading: appliedJobsLoading,
@@ -161,7 +163,7 @@ const StudentDashboard = () => {
     }
   };
 
-  const filteredAppliedJobs = useMemo(() => {
+  const filteredJobs = useMemo(() => {
     if (!statusFilter) return appliedJobs;
     return appliedJobs.filter(job => job.status === statusFilter);
   }, [appliedJobs, statusFilter]);

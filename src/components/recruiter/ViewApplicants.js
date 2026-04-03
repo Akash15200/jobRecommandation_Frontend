@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import Pagination from '../common/Pagination';
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
@@ -23,9 +23,7 @@ const ViewApplicants = () => {
     const fetchApplicants = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/applications/recruiter/${currentUser.id || currentUser._id}?page=${page}&size=10`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await api.get(`/api/applications/recruiter/${currentUser.id || currentUser._id}?page=${page}&size=10`);
             const apps = res.data.content || res.data || [];
             setTotalPages(res.data.totalPages || 0);
             setApplications(apps);
@@ -49,10 +47,9 @@ const ViewApplicants = () => {
 
     const handleDownloadResume = async (applicationId, applicantName) => {
         try {
-            const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/applications/${applicationId}/download-resume`,
+            const response = await api.get(`/api/applications/${applicationId}/download-resume`,
                 {
-                    responseType: 'blob',
-                    headers: { Authorization: `Bearer ${token}` }
+                    responseType: 'blob'
                 }
             );
 
@@ -101,9 +98,8 @@ const ViewApplicants = () => {
 
     const handleStatusChange = async (appId, newStatus, notes = '') => {
         try {
-            await axios.put(`${process.env.REACT_APP_API_BASE_URL}/api/applications/${appId}/status`,
-                { status: newStatus, notes },
-                { headers: { Authorization: `Bearer ${token}` } }
+            await api.put(`/api/applications/${appId}/status`,
+                { status: newStatus, notes }
             );
 
             // Update local state
@@ -125,9 +121,8 @@ const ViewApplicants = () => {
 
         try {
             // Schedule interview and send email
-            const response = await axios.put(`${process.env.REACT_APP_API_BASE_URL}/api/applications/${currentApplication.id || currentApplication._id}/schedule-interview`,
-                { interviewDate },
-                { headers: { Authorization: `Bearer ${token}` } }
+            const response = await api.put(`/api/applications/${currentApplication.id || currentApplication._id}/schedule-interview`,
+                { interviewDate }
             );
 
             // Update local state with interview details
@@ -410,10 +405,9 @@ const ViewApplicants = () => {
                                                 </h3>
                                                 <p className="text-slate-600 text-sm">{app.user?.email || 'No email'}</p>
                                             </div>
-                                        </div>
-
-                                        {/* Status Badge */}
-                                        <div className={`px-4 py-2 rounded-full text-sm font-semibold ${app.status === 'approved' || app.status === 'hired'
+                                                                                {/* Status Badge */}
+                                        <div className={`px-4 py-2 rounded-full text-sm font-semibold ${
+                                            app.status === 'approved' || app.status === 'hired' || app.status === 'interview_scheduled'
                                             ? 'bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 border border-green-200/50' :
                                             app.status === 'rejected'
                                                 ? 'bg-gradient-to-r from-red-100 to-rose-100 text-red-700 border border-red-200/50' :
@@ -421,25 +415,11 @@ const ViewApplicants = () => {
                                                     ? 'bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-700 border border-amber-200/50'
                                                     : 'bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 border border-blue-200/50'
                                             }`}>
-                                            {app.status === 'approved'
+                                            {app.status === 'approved' || app.status === 'interview_scheduled'
                                                 ? 'Approved'
                                                 : app.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
                                         </div>
-
-                                        {/* Status Badge for Interview Scheduled */}
-                                        <div className={`px-4 py-2 rounded-full text-sm font-semibold ${app.status === 'interview_scheduled' || app.status === 'hired'
-                                            ? 'bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 border border-green-200/50' :
-                                            app.status === 'rejected'
-                                                ? 'bg-gradient-to-r from-red-100 to-rose-100 text-red-700 border border-red-200/50' :
-                                                app.status === 'pending'
-                                                    ? 'bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-700 border border-amber-200/50'
-                                                    : 'bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700 border border-blue-200/50'
-                                            }`}>
-                                            {app.status === 'interview_scheduled' ? 'Approved' :
-                                                app.status.split('_').map(word =>
-                                                    word.charAt(0).toUpperCase() + word.slice(1)
-                                                ).join(' ')}
-                                        </div>
+ </div>
                                     </div>
 
                                     {/* Application Details */}

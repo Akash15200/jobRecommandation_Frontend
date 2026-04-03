@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { useQuery } from '@tanstack/react-query';
+import api from '../utils/api';
 import LogoutButton from '../components/common/LogoutButton';
 import JobManagement from '../components/admin/JobManagement';
 import AnalyticsCard from '../components/admin/AnalyticsCard';
@@ -11,6 +13,7 @@ const AdminDashboard = () => {
     const [userAnalytics, setUserAnalytics] = useState(null);
     const [jobDetails, setJobDetails] = useState(null);
     const [detailsLoading, setDetailsLoading] = useState(false);
+    const [localError, setLocalError] = useState(null);
 
     // Use React Query for fetching admin dashboard data
     const {
@@ -51,7 +54,7 @@ const AdminDashboard = () => {
     const fetchUserAnalytics = useCallback(async (userId) => {
         try {
             setDetailsLoading(true);
-            setError(null);
+            setLocalError(null);
             const token = localStorage.getItem('token');
 
             const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/api/admin/users/${userId}/analytics`, {
@@ -100,7 +103,7 @@ const AdminDashboard = () => {
             setUserAnalytics(processedData);
         } catch (err) {
             console.error('Error fetching analytics:', err);
-            setError(err.response?.data?.message || 'Failed to load analytics data');
+            setLocalError(err.response?.data?.message || 'Failed to load analytics data');
             setUserAnalytics(null);
         } finally {
             setDetailsLoading(false);
@@ -150,7 +153,7 @@ const AdminDashboard = () => {
         setSelectedJob(null);
         setUserAnalytics(null);
         setJobDetails(null);
-        setError(null);
+        setLocalError(null);
     };
 
     const handleDeleteUser = async (userId) => {
@@ -160,7 +163,7 @@ const AdminDashboard = () => {
             await axios.delete(`${process.env.REACT_APP_API_BASE_URL}/api/admin/users/${userId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            setUsers(users.filter(user => (user.id || user._id) !== userId));
+            fetchAdminData();
             handleCloseModal();
         } catch (err) {
             console.error(err);
@@ -176,9 +179,7 @@ const AdminDashboard = () => {
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 
-            setUsers(users.map(user =>
-                (user.id || user._id) === userId ? { ...user, role: newRole } : user
-            ));
+            fetchAdminData(); // Refresh to ensure data sync
 
             alert('Role updated successfully!');
         } catch (err) {
@@ -194,7 +195,7 @@ const AdminDashboard = () => {
             await axios.delete(`${process.env.REACT_APP_API_BASE_URL}/api/admin/jobs/${jobId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            setJobs(jobs.filter(job => (job.id || job._id) !== jobId));
+            fetchAdminData();
             handleCloseModal();
         } catch (err) {
             console.error(err);
@@ -271,8 +272,8 @@ const AdminDashboard = () => {
                             <div className="flex justify-center items-center h-64">
                                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500"></div>
                             </div>
-                        ) : error ? (
-                            <div className="text-center py-8 text-red-400">{error}</div>
+                        ) : localError ? (
+                            <div className="text-center py-8 text-red-400">{localError}</div>
                         ) : selectedUser ? (
                             <>
                                 {/* User Header */}
